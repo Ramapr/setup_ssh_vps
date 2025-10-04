@@ -32,6 +32,10 @@ fi
 if $FINALIZE; then
     sed -i '/^Port 22/d' /etc/ssh/sshd_config
     echo "Удалили порт 22 из sshd_config"
+    echo "✅ Настройка завершена. SSH доступен только на порту $SSH_PORT"
+    echo "- OpenVPN доступен на $VPN_PORT/$VPN_PROTO"
+    echo "- Панель OpenVPN Admin UI доступна на 943/tcp"
+    echo "- Панель OpenVPN Web Client доступна на 9443/tcp"
 fi
 
 systemctl restart ssh
@@ -51,6 +55,7 @@ ufw --force enable
 if $FINALIZE; then
     ufw delete allow 22/tcp
     echo "Порт 22 удалён из UFW"
+    exit 0;
 fi
 
 echo "[4/8] Настройка Fail2Ban..."
@@ -111,16 +116,11 @@ echo "[7/8] Перезапуск Fail2Ban..."
 systemctl restart fail2ban
 
 echo "[8/8] Завершение..."
-if $FINALIZE; then
-    echo "✅ Настройка завершена. SSH доступен только на порту $SSH_PORT"
-else
-    echo "⚠️ Внимание! SSH сейчас доступен на портах 22 и $SSH_PORT."
-    echo "- SSH сейчас доступен на портах 22 и $SSH_PORT."
-    echo "- OpenVPN доступен на $VPN_PORT/$VPN_PROTO"
-    echo "- Панель OpenVPN Admin UI доступна на 943/tcp"
-    echo "- Панель OpenVPN Web Client доступна на 9443/tcp"
-    echo ""
-    echo "Попробуй подключиться по новому SSH: ssh -p $SSH_PORT user@IP"
-    echo "Если всё работает — запусти повторно: sudo $0 --finalize"
-    
-fi
+echo "⚠️ Внимание! SSH сейчас доступен на портах 22 и $SSH_PORT."
+echo "- SSH сейчас доступен на портах 22 и $SSH_PORT."
+echo "- OpenVPN доступен на $VPN_PORT/$VPN_PROTO"
+echo "- Панель OpenVPN Admin UI доступна на 943/tcp"
+echo "- Панель OpenVPN Web Client доступна на 9443/tcp"
+echo ""
+echo "Попробуй подключиться по новому SSH: ssh -p $SSH_PORT user@IP"
+echo "Если всё работает — запусти повторно: sudo $0 --finalize"
