@@ -19,10 +19,10 @@ if [[ "$1" == "--finalize" ]]; then
   echo "⚠️ Режим финализации: порт 22 будет отключён!"
 fi
 
-echo "[1/6] Устанавливаем пакеты..."
+echo "[1/8] Устанавливаем пакеты..."
 apt update && apt install -y ufw fail2ban
 
-echo "[2/6] Настройка SSH..."
+echo "[2/8] Настройка SSH..."
 # Добавляем новый порт параллельно
 if ! grep -q "Port $SSH_PORT" /etc/ssh/sshd_config; then
     echo "Port $SSH_PORT" >> /etc/ssh/sshd_config
@@ -36,12 +36,15 @@ fi
 
 systemctl restart ssh
 
-echo "[3/6] Настройка UFW..."
+echo "[3/8] Настройка UFW..."
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp        # пока оставляем стандартный порт
 ufw allow $SSH_PORT/tcp
 ufw allow $VPN_PORT/$VPN_PROTO
+# OpenVPN Access Server admin UI
+ufw allow 943/tcp       # Web Admin UI
+ufw allow 9443/tcp      # Web Client UI
 ufw --force enable
 
 # Если финализация, то убираем 22
@@ -50,7 +53,7 @@ if $FINALIZE; then
     echo "Порт 22 удалён из UFW"
 fi
 
-echo "[4/6] Настройка Fail2Ban..."
+echo "[4/8] Настройка Fail2Ban..."
 cat >/etc/fail2ban/jail.local <<EOL
 [DEFAULT]
 bantime = 3600
@@ -72,20 +75,52 @@ protocol = $VPN_PROTO
 filter = openvpn
 logpath = /var/log/openvpn*.log
 maxretry = 5
+
+[openvpnas-admin]
+enabled = true
+port = 943
+protocol = tcp
+filter = openvpnas
+logpath = /var/log/openvpnas.log
+maxretry = 5
+
+[openvpnas-web]
+enabled = true
+port = 9443
+protocol = tcp
+filter = openvpnas
+logpath = /var/log/openvpnas.log
+maxretry = 5
 EOL
 
 systemctl enable fail2ban
-systemctl restart fail2ban
+# systemctl restart fail2ban
 
-echo "[5/6] Проверка статуса..."
+echo "[5/8] Проверка статуса..."
 ufw status verbose
 fail2ban-client status sshd
 
-echo "[6/6] Завершение..."
+echo "[6/8] Создание фильтра Fail2Ban для OpenVPN Admin UI..."
+cat >/etc/fail2ban/filter.d/openvpnas.conf <<'EOL'
+[Definition]
+failregex = ^.*web_login.*LOGIN FAILED.*username=.*<HOST>.*$
+ignoreregex =
+EOL
+
+echo "[7/8] Перезапуск Fail2Ban..."
+systemctl restart fail2ban
+
+echo "[8/8] Завершение..."
 if $FINALIZE; then
     echo "✅ Настройка завершена. SSH доступен только на порту $SSH_PORT"
 else
     echo "⚠️ Внимание! SSH сейчас доступен на портах 22 и $SSH_PORT."
-    echo "Попробуй подключиться: ssh -p $SSH_PORT user@IP"
+    echo "- SSH сейчас доступен на портах 22 и $SSH_PORT."
+    echo "- OpenVPN доступен на $VPN_PORT/$VPN_PROTO"
+    echo "- Панель OpenVPN Admin UI доступна на 943/tcp"
+    echo "- Панель OpenVPN Web Client доступна на 9443/tcp"
+    echo ""
+    echo "Попробуй подключиться по новому SSH: ssh -p $SSH_PORT user@IP"
     echo "Если всё работает — запусти повторно: sudo $0 --finalize"
+    
 fi
