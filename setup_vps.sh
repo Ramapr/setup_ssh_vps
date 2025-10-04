@@ -23,6 +23,8 @@ echo "[1/8] Устанавливаем пакеты..."
 apt update && apt install -y ufw fail2ban
 
 echo "[2/8] Настройка SSH..."
+# Сделать резервное копирование
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.$(date +%F_%T)
 # Добавляем новый порт параллельно
 if ! grep -q "Port $SSH_PORT" /etc/ssh/sshd_config; then
     echo "Port $SSH_PORT" >> /etc/ssh/sshd_config
@@ -32,12 +34,16 @@ fi
 if $FINALIZE; then
     sed -i '/^Port 22/d' /etc/ssh/sshd_config
     echo "Удалили порт 22 из sshd_config"
+    ufw delete allow 22/tcp
+    echo "Порт 22 удалён из UFW"
     echo "✅ Настройка завершена. SSH доступен только на порту $SSH_PORT"
     echo "- OpenVPN доступен на $VPN_PORT/$VPN_PROTO"
     echo "- Панель OpenVPN Admin UI доступна на 943/tcp"
     echo "- Панель OpenVPN Web Client доступна на 9443/tcp"
+    exit 0
 fi
 
+sshd -t || { echo "Ошибка в sshd_config, исправь перед продолжением"; exit 1; }
 systemctl restart ssh
 
 echo "[3/8] Настройка UFW..."
@@ -47,16 +53,9 @@ ufw allow 22/tcp        # пока оставляем стандартный п�
 ufw allow $SSH_PORT/tcp
 ufw allow $VPN_PORT/$VPN_PROTO
 # OpenVPN Access Server admin UI
-ufw allow 943/tcp       # Web Admin UI
-ufw allow 9443/tcp      # Web Client UI
+ufw allow 943/tcp       # Web Admin UI OpenVPN
+ufw allow 9443/tcp      # Web Client UI OpenVPN
 ufw --force enable
-
-# Если финализация, то убираем 22
-if $FINALIZE; then
-    ufw delete allow 22/tcp
-    echo "Порт 22 удалён из UFW"
-    exit 0;
-fi
 
 echo "[4/8] Настройка Fail2Ban..."
 cat >/etc/fail2ban/jail.local <<EOL
@@ -117,7 +116,6 @@ systemctl restart fail2ban
 
 echo "[8/8] Завершение..."
 echo "⚠️ Внимание! SSH сейчас доступен на портах 22 и $SSH_PORT."
-echo "- SSH сейчас доступен на портах 22 и $SSH_PORT."
 echo "- OpenVPN доступен на $VPN_PORT/$VPN_PROTO"
 echo "- Панель OpenVPN Admin UI доступна на 943/tcp"
 echo "- Панель OpenVPN Web Client доступна на 9443/tcp"
